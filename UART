@@ -1,0 +1,83 @@
+//THIS IS THE ASSIGNMENT CODE WHICH WAS GIVEN TO US WHICH HAD TO PRINT THE NAME USING THE UART THIS IS THE CODE I USED DUE TO SOME BAUD RATE ISSUES IT WAS PRINTING FORBIDDEN OUTPUT
+
+
+module uart_tx_8n1 (
+    input wire clk,            // 9600 Hz clock
+    input wire senddata,       // Pulse to start sending
+    input wire [7:0] txbyte,   // Byte to send
+    output reg tx = 1'b1,      // UART TX line
+    output reg busy = 0        // Indicates if sending
+);
+    reg [3:0] bit_index = 0;
+    reg [9:0] shift_reg = 10'b1111111111;
+
+    always @(posedge clk) begin
+        if (!busy && senddata) begin
+            shift_reg <= {1'b1, txbyte, 1'b0}; // stop, data, start
+            busy <= 1;
+            bit_index <= 0;
+        end else if (busy) begin
+            tx <= shift_reg[0];
+            shift_reg <= {1'b1, shift_reg[9:1]};
+            bit_index <= bit_index + 1;
+            if (bit_index == 9)
+                busy <= 0;
+        end
+    end
+endmodule
+module top (
+    output wire uarttx,
+    input wire hw_clk
+);
+    wire clk_9600;
+    reg [31:0] counter = 0;
+    reg clk_div = 0;
+
+    // Clock division from 12 MHz to 9600 Hz
+    parameter period_9600 = 625;
+    always @(posedge hw_clk) begin
+        counter <= counter + 1;
+        if (counter >= period_9600) begin
+            counter <= 0;
+            clk_div <= ~clk_div;
+        end
+    end
+
+    assign clk_9600 = clk_div;
+
+    reg [7:0] message [0:5];
+    initial begin
+        message[0] = "P";
+        message[1] = "A";
+        message[2] = "D";
+        message[3] = "D";
+        message[4] = "A";
+        message[5] = "M";
+    end
+
+    reg [2:0] msg_index = 0;
+    reg send = 0;
+    wire busy;
+    reg [15:0] delay_counter = 0;
+
+    // FSM to send one character at a time
+    always @(posedge clk_9600) begin
+        if (!busy && !send) begin
+            send <= 1;
+        end else if (send) begin
+            send <= 0;
+            if (msg_index < 6)
+                msg_index <= msg_index + 1;
+            else
+                msg_index <= 0; // Loop again
+        end
+    end
+
+    uart_tx_8n1 tx_inst (
+        .clk(clk_9600),
+        .senddata(send),
+        .txbyte(message[msg_index]),
+        .tx(uarttx),
+        .busy(busy)
+    );
+endmodule
